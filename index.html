@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vexillio: draw the flag from memory</title>
+<meta name="description" content="Vexillio. Draw a country's flag from memory, then see how close you got. A new flag every day, or play unlimited.">
+<meta property="og:title" content="Vexillio: draw the flag from memory">
+<meta property="og:description" content="Draw a country's flag from memory, then see how close you got.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#182430; --bg:#FFFFFF; --panel:#F6F6F4; --line:#DCDCD6;
+    --accent:#C98A2E; --muted:#5C6975; --on-accent:#182430;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  :root[data-theme="dark"]{
+    --ink:#EDE6D6; --bg:#16232E; --panel:#1D2E3D; --line:#2C4155;
+    --accent:#D7A24A; --muted:#AEC0CD; --on-accent:#F4F7F9;
+  }
+  *{box-sizing:border-box;}
+  html,body{min-height:100%;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:'IBM Plex Mono',monospace;
+    display:flex; flex-direction:column; align-items:center;
+    padding:20px 14px 28px;
+    transition:background .25s ease, color .25s ease;
+  }
+  #themeToggle{
+    position:fixed; top:calc(env(safe-area-inset-top,0px) + 14px); right:14px; z-index:5;
+    background:var(--panel); border:1.5px solid #B8BEC4; border-radius:20px;
+    box-shadow:0 2px 6px rgba(0,0,0,0.12);
+    width:42px; height:42px; font-size:18px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  :root[data-theme="dark"] #themeToggle{ border-color:var(--line); box-shadow:0 2px 6px rgba(0,0,0,0.3); }
+
+  header{text-align:center; margin-bottom:6px;}
+  h1{
+    font-family:'Fraunces',serif; font-weight:700; font-size:clamp(26px,6vw,40px);
+    margin:0; letter-spacing:0.5px;
+  }
+  h1 .icon{ font-size:0.85em; margin-right:6px; }
+  h1 .hl{color:var(--accent);}
+  .sub{color:var(--muted); font-size:13px; margin-top:4px;}
+  .meta{color:var(--muted); font-size:12px; margin-top:2px;}
+
+  #modeToggle{ display:flex; justify-content:center; gap:8px; margin-top:14px; }
+  .modeBtn{
+    font-family:inherit; font-size:12px; font-weight:600; letter-spacing:.3px;
+    background:var(--panel); color:var(--muted); border:1px solid var(--line); border-radius:20px;
+    padding:8px 18px; cursor:pointer;
+  }
+  .modeBtn.active{ background:var(--accent); color:var(--on-accent); border-color:var(--accent); }
+
+  main{ width:100%; max-width:460px; display:flex; flex-direction:column; align-items:center; }
+
+  #prompt{ margin-top:22px; text-align:center; }
+  #prompt .small{ font-size:12px; color:var(--muted); letter-spacing:.5px; text-transform:uppercase; }
+  #prompt .country{
+    font-family:'Fraunces',serif; font-weight:700; font-size:clamp(24px,7vw,34px);
+    margin-top:2px;
+  }
+
+  #canvasWrap{ width:100%; margin-top:14px; }
+  canvas#pad{
+    display:block; width:100%; height:auto; aspect-ratio:3/2;
+    background:#FFFFFF; border:2px solid var(--line); border-radius:8px;
+    touch-action:none; cursor:crosshair;
+  }
+  canvas#pad.locked{ cursor:default; }
+
+  .controls{ width:100%; margin-top:12px; display:flex; flex-direction:column; gap:10px; align-items:center; }
+  .palette{ display:flex; flex-wrap:wrap; gap:7px; justify-content:center; }
+  .swatch{
+    width:30px; height:30px; border-radius:50%; border:2px solid var(--line); cursor:pointer; padding:0;
+  }
+  .swatch.active{ outline:3px solid var(--accent); outline-offset:2px; }
+  .swatch.custom{
+    position:relative; display:inline-block; overflow:hidden;
+    background:conic-gradient(#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00);
+  }
+  .swatch.custom::after{
+    content:"+"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:18px; color:#fff; text-shadow:0 0 3px #000, 0 0 3px #000; pointer-events:none;
+  }
+  .swatch.custom input{
+    position:absolute; top:-6px; left:-6px; width:44px; height:44px; opacity:0; cursor:pointer; border:0; padding:0;
+  }
+  .toolrow{ display:flex; flex-wrap:wrap; gap:6px; justify-content:center; }
+  .tool, .act{
+    font-family:inherit; font-size:12px; font-weight:600;
+    background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:8px;
+    padding:8px 11px; cursor:pointer;
+  }
+  .tool.active{ background:var(--accent); color:var(--on-accent); border-color:var(--accent); }
+  .sep{ width:1px; background:var(--line); margin:0 2px; }
+  .actrow{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+  .act.primary{ background:var(--accent); color:var(--on-accent); border-color:var(--accent); padding:10px 20px; font-size:13px; font-weight:700; }
+
+  #result{ width:100%; margin-top:18px; text-align:center; }
+  .score{ font-family:'Fraunces',serif; font-weight:700; font-size:44px; line-height:1; }
+  .score small{ font-size:18px; color:var(--muted); font-weight:500; }
+  .verdict{ margin-top:6px; font-size:14px; color:var(--muted); }
+  .compare{ display:flex; gap:10px; margin-top:16px; }
+  .compare figure{ margin:0; flex:1 1 0; min-width:0; }
+  .compare img{
+    width:100%; aspect-ratio:3/2; object-fit:fill; display:block;
+    border:2px solid var(--line); border-radius:6px; background:#fff;
+  }
+  .compare figcaption{ font-size:11px; color:var(--muted); margin-top:5px; text-transform:uppercase; letter-spacing:.5px; }
+  .rate{ margin-top:14px; font-size:13px; }
+  .rate .stars{ display:flex; gap:6px; justify-content:center; margin-top:8px; }
+  .rate button{
+    font-family:inherit; font-size:14px; font-weight:700; width:38px; height:38px;
+    background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:8px; cursor:pointer;
+  }
+  .breakdown{ margin-top:6px; font-size:12px; color:var(--muted); }
+  .hidden{display:none !important;}
+  #msg{ min-height:20px; margin-top:8px; font-size:13px; color:var(--accent); text-align:center; }
+  footer{margin-top:auto; padding-top:22px; color:var(--muted); font-size:11px; text-align:center;}
+</style>
+</head>
+<body>
+
+<button id="themeToggle" title="Toggle night mode">🌙</button>
+
+<header>
+  <h1><span class="icon">🏳️</span>Vexil<span class="hl">lio</span></h1>
+  <div class="sub" id="subText">Draw today's flag from memory</div>
+  <div class="meta" id="dateLabel"></div>
+  <div id="modeToggle">
+    <button class="modeBtn" data-mode="daily">Daily</button>
+    <button class="modeBtn" data-mode="unlimited">Unlimited</button>
+  </div>
+</header>
+
+<main>
+  <div id="prompt">
+    <div class="small">Draw the flag of</div>
+    <div class="country" id="countryName"></div>
+  </div>
+
+  <div id="canvasWrap"><canvas id="pad" width="600" height="400"></canvas></div>
+  <div id="msg"></div>
+
+  <div class="controls" id="controls">
+    <div class="palette" id="palette"></div>
+    <div class="toolrow" id="tools"></div>
+    <div class="actrow">
+      <button class="act" id="undoBtn">↶ Undo</button>
+      <button class="act" id="clearBtn">Clear</button>
+      <button class="act primary" id="submitBtn">Reveal &amp; score</button>
+    </div>
+  </div>
+
+  <div id="result" class="hidden"></div>
+</main>
+
+<footer>Vexillio. No peeking. 196 countries.</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- theme ----------
+  var root = document.documentElement;
+  var toggleBtn = document.getElementById("themeToggle");
+  var savedTheme = "light";
+  try { savedTheme = localStorage.getItem("vexillioTheme") || "light"; } catch(e) {}
+  applyTheme(savedTheme);
+  toggleBtn.addEventListener("click", function(){
+    var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    applyTheme(next);
+    try { localStorage.setItem("vexillioTheme", next); } catch(e) {}
+  });
+  function applyTheme(t){
+    if (t === "dark"){ root.setAttribute("data-theme","dark"); toggleBtn.textContent = "☀️"; }
+    else { root.removeAttribute("data-theme"); toggleBtn.textContent = "🌙"; }
+  }
+
+  // ---------- data: 196 countries with ISO codes (for flag images) ----------
+  var COUNTRIES = [
+    ["Afghanistan","af"],["Albania","al"],["Algeria","dz"],["Andorra","ad"],["Angola","ao"],
+    ["Antigua and Barbuda","ag"],["Argentina","ar"],["Armenia","am"],["Australia","au"],["Austria","at"],
+    ["Azerbaijan","az"],["Bahamas","bs"],["Bahrain","bh"],["Bangladesh","bd"],["Barbados","bb"],
+    ["Belarus","by"],["Belgium","be"],["Belize","bz"],["Benin","bj"],["Bhutan","bt"],["Bolivia","bo"],
+    ["Bosnia and Herzegovina","ba"],["Botswana","bw"],["Brazil","br"],["Brunei","bn"],["Bulgaria","bg"],
+    ["Burkina Faso","bf"],["Burundi","bi"],["Cabo Verde","cv"],["Cambodia","kh"],["Cameroon","cm"],
+    ["Canada","ca"],["Central African Republic","cf"],["Chad","td"],["Chile","cl"],["China","cn"],
+    ["Colombia","co"],["Comoros","km"],["Congo","cg"],["Democratic Republic of the Congo","cd"],
+    ["Costa Rica","cr"],["Cote d'Ivoire","ci"],["Croatia","hr"],["Cuba","cu"],["Cyprus","cy"],
+    ["Czechia","cz"],["Denmark","dk"],["Djibouti","dj"],["Dominica","dm"],["Dominican Republic","do"],
+    ["Ecuador","ec"],["Egypt","eg"],["El Salvador","sv"],["Equatorial Guinea","gq"],["Eritrea","er"],
+    ["Estonia","ee"],["Eswatini","sz"],["Ethiopia","et"],["Fiji","fj"],["Finland","fi"],["France","fr"],
+    ["Gabon","ga"],["Gambia","gm"],["Georgia","ge"],["Germany","de"],["Ghana","gh"],["Greece","gr"],
+    ["Grenada","gd"],["Guatemala","gt"],["Guinea","gn"],["Guinea-Bissau","gw"],["Guyana","gy"],
+    ["Haiti","ht"],["Honduras","hn"],["Hungary","hu"],["Iceland","is"],["India","in"],["Indonesia","id"],
+    ["Iran","ir"],["Iraq","iq"],["Ireland","ie"],["Israel","il"],["Italy","it"],["Jamaica","jm"],
+    ["Japan","jp"],["Jordan","jo"],["Kazakhstan","kz"],["Kenya","ke"],["Kiribati","ki"],["Kuwait","kw"],
+    ["Kyrgyzstan","kg"],["Laos","la"],["Latvia","lv"],["Lebanon","lb"],["Lesotho","ls"],["Liberia","lr"],
+    ["Libya","ly"],["Liechtenstein","li"],["Lithuania","lt"],["Luxembourg","lu"],["Madagascar","mg"],
+    ["Malawi","mw"],["Malaysia","my"],["Maldives","mv"],["Mali","ml"],["Malta","mt"],
+    ["Marshall Islands","mh"],["Mauritania","mr"],["Mauritius","mu"],["Mexico","mx"],["Micronesia","fm"],
+    ["Moldova","md"],["Monaco","mc"],["Mongolia","mn"],["Montenegro","me"],["Morocco","ma"],
+    ["Mozambique","mz"],["Myanmar","mm"],["Namibia","na"],["Nauru","nr"],["Nepal","np"],
+    ["Netherlands","nl"],["New Zealand","nz"],["Nicaragua","ni"],["Niger","ne"],["Nigeria","ng"],
+    ["North Korea","kp"],["North Macedonia","mk"],["Norway","no"],["Oman","om"],["Pakistan","pk"],
+    ["Palau","pw"],["Palestine","ps"],["Panama","pa"],["Papua New Guinea","pg"],["Paraguay","py"],
+    ["Peru","pe"],["Philippines","ph"],["Poland","pl"],["Portugal","pt"],["Qatar","qa"],["Romania","ro"],
+    ["Russia","ru"],["Rwanda","rw"],["Saint Kitts and Nevis","kn"],["Saint Lucia","lc"],
+    ["Saint Vincent and the Grenadines","vc"],["Samoa","ws"],["San Marino","sm"],
+    ["Sao Tome and Principe","st"],["Saudi Arabia","sa"],["Senegal","sn"],["Serbia","rs"],
+    ["Seychelles","sc"],["Sierra Leone","sl"],["Singapore","sg"],["Slovakia","sk"],["Slovenia","si"],
+    ["Solomon Islands","sb"],["Somalia","so"],["South Africa","za"],["South Korea","kr"],
+    ["South Sudan","ss"],["Spain","es"],["Sri Lanka","lk"],["Sudan","sd"],["Suriname","sr"],
+    ["Sweden","se"],["Switzerland","ch"],["Syria","sy"],["Taiwan","tw"],["Tajikistan","tj"],
+    ["Tanzania","tz"],["Thailand","th"],["Timor-Leste","tl"],["Togo","tg"],["Tonga","to"],
+    ["Trinidad and Tobago","tt"],["Tunisia","tn"],["Turkey","tr"],["Turkmenistan","tm"],["Tuvalu","tv"],
+    ["Uganda","ug"],["Ukraine","ua"],["United Arab Emirates","ae"],["United Kingdom","gb"],
+    ["United States","us"],["Uruguay","uy"],["Uzbekistan","uz"],["Vanuatu","vu"],["Vatican City","va"],
+    ["Venezuela","ve"],["Vietnam","vn"],["Yemen","ye"],["Zambia","zm"],["Zimbabwe","zw"]
+  ];
+
+  // ---------- elements ----------
+  var W = 600, H = 400;
+  var pad = document.getElementById("pad");
+  var ctx = pad.getContext("2d", { willReadFrequently: true });
+  var paletteEl = document.getElementById("palette");
+  var toolsEl = document.getElementById("tools");
+  var controlsEl = document.getElementById("controls");
+  var resultEl = document.getElementById("result");
+  var msgEl = document.getElementById("msg");
+  var subText = document.getElementById("subText");
+  var dateLabel = document.getElementById("dateLabel");
+  var countryNameEl = document.getElementById("countryName");
+  var modeButtons = document.querySelectorAll(".modeBtn");
+
+  // ---------- palette & tools ----------
+  var COLORS = ["#FFFFFF","#C8CCD0","#8A8F94","#111111",
+                "#FF0000","#ED2939","#CE1126","#9E3039","#6E1423","#F4A6C0",
+                "#FF8C00","#FCD116","#F5E27A","#7B4B2A",
+                "#7CC576","#3A7728","#078930","#009A44","#006B3F","#00493A",
+                "#75AADB","#5BC8F5","#0072CE","#005BBB","#0A47B8","#003580","#0C1C8C","#00205B",
+                "#6A2C91","#B0276B"];
+  var color = "#CE1126";
+  var tool = "brush";
+  var size = 10;
+
+  COLORS.forEach(function(c){
+    var b = document.createElement("button");
+    b.className = "swatch" + (c === color ? " active" : "");
+    b.style.background = c;
+    b.title = c;
+    b.addEventListener("click", function(){
+      color = c;
+      Array.prototype.forEach.call(paletteEl.children, function(x){ x.classList.remove("active"); });
+      b.classList.add("active");
+      if (tool === "eraser") setTool("brush");
+    });
+    paletteEl.appendChild(b);
+  });
+
+  // custom colour picker: any shade
+  var customWrap = document.createElement("label");
+  customWrap.className = "swatch custom";
+  customWrap.title = "Pick any custom colour";
+  var customInput = document.createElement("input");
+  customInput.type = "color";
+  customInput.value = "#9E3039";
+  customWrap.appendChild(customInput);
+  function useCustom(){
+    color = customInput.value;
+    Array.prototype.forEach.call(paletteEl.children, function(x){ x.classList.remove("active"); });
+    customWrap.classList.add("active");
+    customWrap.style.background = color;
+    if (tool === "eraser") setTool("brush");
+  }
+  customInput.addEventListener("input", useCustom);
+  customInput.addEventListener("change", useCustom);
+  paletteEl.appendChild(customWrap);
+
+  var TOOLS = [["brush","✏️ Brush"],["fill","🪣 Fill"],["rect","▭ Rect"],["circle","● Circle"],["star","★ Star"],["eraser","🧽 Erase"]];
+  var toolBtns = {};
+  TOOLS.forEach(function(t){
+    var b = document.createElement("button");
+    b.className = "tool" + (t[0] === tool ? " active" : "");
+    b.textContent = t[1];
+    b.addEventListener("click", function(){ setTool(t[0]); });
+    toolsEl.appendChild(b);
+    toolBtns[t[0]] = b;
+  });
+  var sep = document.createElement("div"); sep.className = "sep"; toolsEl.appendChild(sep);
+  var sizeBtns = {};
+  [["S",4],["M",10],["L",22]].forEach(function(s){
+    var b = document.createElement("button");
+    b.className = "tool" + (s[1] === size ? " active" : "");
+    b.textContent = s[0];
+    b.title = "Brush size";
+    b.addEventListener("click", function(){
+      size = s[1];
+      Object.keys(sizeBtns).forEach(function(k){ sizeBtns[k].classList.remove("active"); });
+      b.classList.add("active");
+    });
+    toolsEl.appendChild(b);
+    sizeBtns[s[0]] = b;
+  });
+  function setTool(t){
+    tool = t;
+    Object.keys(toolBtns).forEach(function(k){ toolBtns[k].classList.toggle("active", k === t); });
+  }
+
+  // ---------- drawing ----------
+  var undoStack = [];
+  var locked = false;
+  var drawing = false, startX = 0, startY = 0, lastX = 0, lastY = 0, baseImg = null;
+
+  function resetCanvas(){
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, W, H);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    undoStack = [];
+  }
+  function pushUndo(){
+    try {
+      undoStack.push(ctx.getImageData(0, 0, W, H));
+      if (undoStack.length > 25) undoStack.shift();
+    } catch(e) {}
+  }
+  function pos(e){
+    var r = pad.getBoundingClientRect();
+    return [ (e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height ];
+  }
+  function hexToRgb(h){
+    return [parseInt(h.substr(1,2),16), parseInt(h.substr(3,2),16), parseInt(h.substr(5,2),16)];
+  }
+  function drawStar(cx, cy, r){
+    ctx.beginPath();
+    for (var i=0;i<10;i++){
+      var a = -Math.PI/2 + i*Math.PI/5;
+      var rr = (i % 2) ? r*0.4 : r;
+      ctx.lineTo(cx + rr*Math.cos(a), cy + rr*Math.sin(a));
+    }
+    ctx.closePath(); ctx.fill();
+  }
+  function floodFill(sx, sy, hex){
+    sx = Math.max(0, Math.min(W-1, Math.round(sx)));
+    sy = Math.max(0, Math.min(H-1, Math.round(sy)));
+    var img = ctx.getImageData(0, 0, W, H), d = img.data;
+    var rgb = hexToRgb(hex);
+    var i0 = (sy*W + sx)*4, tr = d[i0], tg = d[i0+1], tb = d[i0+2];
+    if (Math.abs(tr-rgb[0]) + Math.abs(tg-rgb[1]) + Math.abs(tb-rgb[2]) < 6) return;
+    var seen = new Uint8Array(W*H), stack = [sx, sy];
+    while (stack.length){
+      var y = stack.pop(), x = stack.pop();
+      var p = y*W + x;
+      if (seen[p]) continue;
+      var i = p*4;
+      if (Math.abs(d[i]-tr) + Math.abs(d[i+1]-tg) + Math.abs(d[i+2]-tb) > 60) continue;
+      seen[p] = 1;
+      d[i] = rgb[0]; d[i+1] = rgb[1]; d[i+2] = rgb[2]; d[i+3] = 255;
+      if (x > 0) stack.push(x-1, y);
+      if (x < W-1) stack.push(x+1, y);
+      if (y > 0) stack.push(x, y-1);
+      if (y < H-1) stack.push(x, y+1);
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+  function drawShape(x, y){
+    ctx.putImageData(baseImg, 0, 0);
+    ctx.fillStyle = color;
+    if (tool === "rect"){
+      ctx.fillRect(startX, startY, x - startX, y - startY);
+    } else if (tool === "circle"){
+      ctx.beginPath();
+      ctx.arc(startX, startY, Math.hypot(x - startX, y - startY), 0, Math.PI*2);
+      ctx.fill();
+    } else if (tool === "star"){
+      drawStar(startX, startY, Math.hypot(x - startX, y - startY));
+    }
+  }
+
+  pad.addEventListener("pointerdown", function(e){
+    if (locked) return;
+    e.preventDefault();
+    var p = pos(e), x = p[0], y = p[1];
+    if (tool === "fill"){ pushUndo(); floodFill(x, y, color); return; }
+    pushUndo();
+    drawing = true; startX = lastX = x; startY = lastY = y;
+    try { pad.setPointerCapture(e.pointerId); } catch(err) {}
+    if (tool === "brush" || tool === "eraser"){
+      ctx.fillStyle = tool === "eraser" ? "#FFFFFF" : color;
+      var r = (tool === "eraser" ? size*1.5 : size) / 2;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+    } else {
+      baseImg = ctx.getImageData(0, 0, W, H);
+    }
+  });
+  pad.addEventListener("pointermove", function(e){
+    if (!drawing || locked) return;
+    var p = pos(e), x = p[0], y = p[1];
+    if (tool === "brush" || tool === "eraser"){
+      ctx.strokeStyle = tool === "eraser" ? "#FFFFFF" : color;
+      ctx.lineWidth = tool === "eraser" ? size*1.5 : size;
+      ctx.beginPath(); ctx.moveTo(lastX, lastY); ctx.lineTo(x, y); ctx.stroke();
+      lastX = x; lastY = y;
+    } else {
+      drawShape(x, y);
+    }
+  });
+  function endStroke(){ drawing = false; baseImg = null; }
+  pad.addEventListener("pointerup", endStroke);
+  pad.addEventListener("pointercancel", endStroke);
+  pad.addEventListener("pointerleave", function(){ if (drawing && (tool === "brush" || tool === "eraser")) endStroke(); });
+
+  document.getElementById("undoBtn").addEventListener("click", function(){
+    if (locked || !undoStack.length) return;
+    ctx.putImageData(undoStack.pop(), 0, 0);
+  });
+  document.getElementById("clearBtn").addEventListener("click", function(){
+    if (locked) return;
+    pushUndo();
+    ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, W, H);
+  });
+
+  // ---------- game ----------
+  var mode = "daily";
+  var target = null, storeKey = null, loadToken = 0;
+  var flagImg = null, flagCorsOK = false, flagLoaded = false;
+
+  modeButtons.forEach(function(b){
+    b.addEventListener("click", function(){ setMode(b.dataset.mode); b.blur(); });
+  });
+
+  function todayStr(){ return new Date().toISOString().slice(0,10); }
+
+  function setMode(m){
+    mode = m;
+    modeButtons.forEach(function(b){ b.classList.toggle("active", b.dataset.mode === m); });
+    if (m === "daily"){
+      subText.textContent = "Draw today's flag from memory";
+      dateLabel.textContent = new Date().toLocaleDateString(undefined,{weekday:"long", month:"long", day:"numeric"});
+      dateLabel.classList.remove("hidden");
+      var epochDay = Math.floor(Date.now() / 86400000);
+      startGame(COUNTRIES[(epochDay + 97) % COUNTRIES.length], "vexillio_" + todayStr());
+    } else {
+      subText.textContent = "Unlimited practice. New flag each round";
+      dateLabel.classList.add("hidden");
+      startGame(COUNTRIES[Math.floor(Math.random() * COUNTRIES.length)], null);
+    }
+  }
+
+  function loadFlag(code, cb){
+    var url = "https://flagcdn.com/w320/" + code + ".png";
+    var im = new Image();
+    im.crossOrigin = "anonymous";
+    im.onload = function(){ cb(im, true); };
+    im.onerror = function(){
+      var im2 = new Image();
+      im2.onload = function(){ cb(im2, false); };
+      im2.onerror = function(){ cb(null, false); };
+      im2.src = url;
+    };
+    im.src = url;
+  }
+
+  function startGame(t, persistKey){
+    target = t; storeKey = persistKey;
+    countryNameEl.textContent = t[0];
+    resultEl.classList.add("hidden"); resultEl.innerHTML = "";
+    msgEl.textContent = "";
+    controlsEl.classList.remove("hidden");
+    locked = false; drawing = false;
+    pad.classList.remove("locked");
+    resetCanvas();
+    flagImg = null; flagCorsOK = false; flagLoaded = false;
+
+    var token = ++loadToken;
+    loadFlag(t[1], function(im, ok){
+      if (token !== loadToken) return;
+      flagImg = im; flagCorsOK = ok; flagLoaded = !!im;
+      maybeRestore();
+    });
+
+    if (storeKey){
+      var saved = null;
+      try { saved = JSON.parse(localStorage.getItem(storeKey) || "null"); } catch(e) {}
+      if (saved && saved.done){
+        pendingRestore = saved;
+        var im = new Image();
+        im.onload = function(){
+          if (token !== loadToken) return;
+          ctx.drawImage(im, 0, 0, W, H);
+          pendingImgReady = true;
+          maybeRestore();
+        };
+        im.src = saved.img;
+      } else { pendingRestore = null; pendingImgReady = false; }
+    } else { pendingRestore = null; pendingImgReady = false; }
+  }
+  var pendingRestore = null, pendingImgReady = false;
+  function maybeRestore(){
+    if (pendingRestore && pendingImgReady){
+      var s = pendingRestore; pendingRestore = null; pendingImgReady = false;
+      showResult(s.score, s.rated, s.img, s.parts);
+    }
+  }
+
+  // ---------- scoring ----------
+  // Three signals, measured against what a blank white canvas would get, then a steep curve:
+  //  Layout    coarse blocks, tolerant of small shifts and of shade  -> is the overall design right?
+  //  Precision fine blocks, tight tolerance, sensitive to shade       -> are sizes, positions and exact shades right?
+  //  Colours   which colours you used compared with the real ones     -> right colours, wherever they sit
+  // The blend is mapped through a calibration curve (CAL): a decent drawing lands mid-range, 80 takes real care, 95+ needs a near-exact copy.
+  var COARSE = { cell: 20, tol: 20, scale: 70, p: 1.5, Rx: 4, Ry: 3, lambda: 0.5 };
+  var FINE   = { cell: 8,  tol: 5,  scale: 60, p: 1.3, Rx: 1, Ry: 1, lambda: 0.2 };
+  var COL    = { tol: 8,  scale: 50, p: 1.3 };
+  var MIX    = { layout: 0.50, precision: 0.30, colour: 0.20 };
+  var WEXP   = 0.5;
+  function cellGrid(imgData, cell){
+    var cols = W/cell, rows = H/cell;
+    var out = new Float32Array(cols*rows*3), d = imgData.data;
+    for (var y=0; y<H; y++){
+      var cy = (y/cell)|0;
+      for (var x=0; x<W; x++){
+        var idx = (cy*cols + ((x/cell)|0))*3, i = (y*W + x)*4;
+        out[idx] += d[i]; out[idx+1] += d[i+1]; out[idx+2] += d[i+2];
+      }
+    }
+    for (var k=0; k<out.length; k++) out[k] /= (cell*cell);
+    return out;
+  }
+  function toLab(r, g, b){
+    function lin(v){ v /= 255; return v <= 0.04045 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4); }
+    var R = lin(r), G = lin(g), B = lin(b);
+    var X = (0.4124*R + 0.3576*G + 0.1805*B) / 0.95047;
+    var Y = (0.2126*R + 0.7152*G + 0.0722*B);
+    var Z = (0.0193*R + 0.1192*G + 0.9505*B) / 1.08883;
+    function f(t){ return t > 0.008856 ? Math.cbrt(t) : 7.787*t + 16/116; }
+    var fx = f(X), fy = f(Y), fz = f(Z);
+    return [116*fy - 16, 500*(fx - fy), 200*(fy - fz)];
+  }
+  function labGrid(rgb){
+    var n = rgb.length/3, out = new Float32Array(n*3);
+    for (var i=0; i<n; i++){
+      var l = toLab(rgb[i*3], rgb[i*3+1], rgb[i*3+2]);
+      out[i*3] = l[0]; out[i*3+1] = l[1]; out[i*3+2] = l[2];
+    }
+    return out;
+  }
+  function dE(a, ia, b, ib){
+    var dl = a[ia]-b[ib], da = a[ia+1]-b[ib+1], db = a[ia+2]-b[ib+2];
+    return Math.sqrt(dl*dl + da*da + db*db);
+  }
+  function pen(d, tol, scale, p){
+    var x = (d - tol) / scale;
+    return x <= 0 ? 0 : (x >= 1 ? 1 : Math.pow(x, p));
+  }
+  function featureWeights(realRgb){
+    // weight = 1 / area^WEXP of the colour region a cell belongs to, so small features matter
+    var bins = colourBins(realRgb), n = realRgb.length/3, wt = new Float32Array(n);
+    var cl = bins.map(function(b){ return b.lab; });
+    for (var i=0; i<n; i++){
+      var lab = toLab(realRgb[i*3], realRgb[i*3+1], realRgb[i*3+2]), best = 1e9, bi = 0;
+      for (var j=0; j<cl.length; j++){
+        var dl = lab[0]-cl[j][0], da = lab[1]-cl[j][1], db = lab[2]-cl[j][2], d = dl*dl+da*da+db*db;
+        if (d < best){ best = d; bi = j; }
+      }
+      wt[i] = cl.length ? Math.pow(bins[bi].w, -WEXP) : 1;
+    }
+    return wt;
+  }
+  function layoutErr(A, B, P, wt){
+    var cols = W/P.cell, rows = H/P.cell, tot = 0, wsum = 0;
+    for (var y=0; y<rows; y++) for (var x=0; x<cols; x++){
+      var ia = (y*cols + x)*3, best = 1;
+      for (var dy=-P.Ry; dy<=P.Ry; dy++){
+        var yy = y+dy; if (yy < 0 || yy >= rows) continue;
+        for (var dx=-P.Rx; dx<=P.Rx; dx++){
+          var xx = x+dx; if (xx < 0 || xx >= cols) continue;
+          var off = Math.max(Math.abs(dx)/P.Rx, Math.abs(dy)/P.Ry);
+          var c = pen(dE(A, ia, B, (yy*cols + xx)*3), P.tol, P.scale, P.p) + P.lambda*off;
+          if (c < best) best = c;
+        }
+      }
+      var wi = wt ? wt[y*cols + x] : 1;
+      tot += best * wi; wsum += wi;
+    }
+    return tot / wsum;
+  }
+  function colourBins(rgb){
+    var map = {}, n = rgb.length/3, list = [];
+    for (var i=0; i<n; i++){
+      var r = rgb[i*3], g = rgb[i*3+1], b = rgb[i*3+2];
+      var k = ((r>>4)<<8) | ((g>>4)<<4) | (b>>4);
+      var o = map[k] || (map[k] = { w:0, r:0, g:0, b:0 });
+      o.w++; o.r += r; o.g += g; o.b += b;
+    }
+    for (var key in map){
+      var o2 = map[key];
+      if (o2.w / n < 0.012) continue;
+      list.push({ w: o2.w/n, lab: toLab(o2.r/o2.w, o2.g/o2.w, o2.b/o2.w) });
+    }
+    return list;
+  }
+  function presence(A, B){
+    var tw = 0, cost = 0, i, j;
+    for (i=0; i<A.length; i++) tw += Math.sqrt(A[i].w);
+    if (!tw) return 0;
+    for (i=0; i<A.length; i++){
+      var best = 1;
+      for (j=0; j<B.length; j++){
+        var dl = A[i].lab[0]-B[j].lab[0], da = A[i].lab[1]-B[j].lab[1], db = A[i].lab[2]-B[j].lab[2];
+        var c = pen(Math.sqrt(dl*dl+da*da+db*db), COL.tol, COL.scale, COL.p);
+        if (c < best) best = c;
+      }
+      cost += Math.sqrt(A[i].w) / tw * best;
+    }
+    return cost;
+  }
+  function colourCost(A, B){ return Math.max(presence(A, B), presence(B, A)); }
+  var CAL = [[0,0],[0.15,3],[0.30,10],[0.45,28],[0.576,40],[0.624,48],[0.80,62],[0.863,68],[0.90,72],
+             [0.954,80],[0.965,84],[0.975,88],[0.985,93],[0.995,98],[1,100]];
+  function curve(m){
+    if (m <= 0) return 0;
+    for (var i=1; i<CAL.length; i++){
+      if (m <= CAL[i][0]){
+        var p = CAL[i-1], q = CAL[i];
+        return (p[1] + (q[1]-p[1]) * (m-p[0]) / (q[0]-p[0])) / 100;
+      }
+    }
+    return 1;
+  }
+  function clamp01(v){ return Math.max(0, Math.min(1, v)); }
+  function similarity(mineRgb, realRgb, whiteRgb, P){
+    var m = labGrid(mineRgb), r = labGrid(realRgb), w = labGrid(whiteRgb), wt = featureWeights(realRgb);
+    var e  = (layoutErr(r, m, P, wt) + layoutErr(m, r, P, wt)) / 2;
+    var eB = (layoutErr(r, w, P, wt) + layoutErr(w, r, P, wt)) / 2;
+    return clamp01(1 - e / Math.max(eB, 0.02));
+  }
+  function scoreImages(mineData, realData){
+    function grids(cell){
+      var m = cellGrid(mineData, cell), r = cellGrid(realData, cell), w = new Float32Array(m.length); w.fill(255);
+      return [m, r, w];
+    }
+    var c = grids(COARSE.cell), f = grids(FINE.cell);
+    var L = similarity(c[0], c[1], c[2], COARSE);
+    var D = similarity(f[0], f[1], f[2], FINE);
+    var rb = colourBins(c[1]);
+    var white = new Float32Array(c[1].length); white.fill(255);
+    var C = clamp01(1 - colourCost(rb, colourBins(c[0])) / Math.max(colourCost(rb, colourBins(white)), 0.02));
+    var mix = MIX.layout*L + MIX.precision*D + MIX.colour*C;
+    return { mix: mix, score: Math.round(100 * curve(mix)), layout: Math.round(100*L), precision: Math.round(100*D), colour: Math.round(100*C) };
+  }
+
+
+  function autoScore(){
+    if (!flagImg || !flagCorsOK) return null;
+    try {
+      var c = document.createElement("canvas"); c.width = W; c.height = H;
+      var cx = c.getContext("2d", { willReadFrequently: true });
+      cx.fillStyle = "#fff"; cx.fillRect(0, 0, W, H);
+      cx.drawImage(flagImg, 0, 0, W, H);
+      return scoreImages(ctx.getImageData(0, 0, W, H), cx.getImageData(0, 0, W, H));
+    } catch(e) { return null; }
+  }
+  function verdictFor(s){
+    if (s >= 95) return "Cartographer-level memory.";
+    if (s >= 82) return "Very close. You know this flag.";
+    if (s >= 62) return "Pretty good. The main idea is right.";
+    if (s >= 40) return "Some of it is right. Colours or layout slipped.";
+    if (s >= 15) return "Vague memory. Take another look.";
+    return "Not close this time.";
+  }
+
+  // ---------- result ----------
+  document.getElementById("submitBtn").addEventListener("click", function(){
+    if (locked) return;
+    if (!flagLoaded){ msgEl.textContent = "Couldn't load the real flag. Check your connection and retry."; return; }
+    var drawn = pad.toDataURL("image/png");
+    var s = autoScore();
+    if (s === null){
+      lockBoard();
+      showRating(drawn);
+    } else {
+      finalize(s.score, false, drawn, s);
+    }
+  });
+
+  function lockBoard(){
+    locked = true; pad.classList.add("locked");
+    controlsEl.classList.add("hidden");
+  }
+
+  function finalize(score, rated, drawn, parts){
+    lockBoard();
+    if (storeKey){
+      try { localStorage.setItem(storeKey, JSON.stringify({ done:true, score:score, rated:rated, img:drawn, parts:parts || null })); } catch(e) {}
+    }
+    showResult(score, rated, drawn, parts);
+  }
+
+  function flagUrl(){ return "https://flagcdn.com/w320/" + target[1] + ".png"; }
+
+  function showRating(drawn){
+    resultEl.classList.remove("hidden");
+    resultEl.innerHTML =
+      "<div class='compare'><figure><img src='" + drawn + "' alt='Your drawing'><figcaption>Your drawing</figcaption></figure>" +
+      "<figure><img src='" + flagUrl() + "' alt='Real flag'><figcaption>Real flag</figcaption></figure></div>" +
+      "<div class='rate'>Compare them. How close was your drawing?<div class='stars'>" +
+      [1,2,3,4,5].map(function(n){ return "<button data-n='" + n + "'>" + n + "</button>"; }).join("") +
+      "</div></div>";
+    Array.prototype.forEach.call(resultEl.querySelectorAll(".stars button"), function(b){
+      b.addEventListener("click", function(){ finalize(parseInt(b.dataset.n,10) * 20, true, drawn); });
+    });
+  }
+
+  function showResult(score, rated, drawn, parts){
+    locked = true; pad.classList.add("locked");
+    controlsEl.classList.add("hidden");
+    resultEl.classList.remove("hidden");
+    var nextBtn = mode === "unlimited" ? "<button class='act primary' id='nextBtn'>Next flag</button>" : "";
+    resultEl.innerHTML =
+      "<div class='score'>" + score + "<small>/100</small></div>" +
+      "<div class='verdict'>" + verdictFor(score) + (rated ? " (self-rated)" : "") + "</div>" +
+      (parts ? "<div class='breakdown'>Layout " + parts.layout + "% &nbsp;·&nbsp; Precision " + parts.precision + "% &nbsp;·&nbsp; Colours " + parts.colour + "%</div>" : "") +
+      "<div class='compare'><figure><img src='" + drawn + "' alt='Your drawing'><figcaption>Your drawing</figcaption></figure>" +
+      "<figure><img src='" + flagUrl() + "' alt='Real flag of " + target[0] + "'><figcaption>" + target[0] + "</figcaption></figure></div>" +
+      "<div class='actrow' style='margin-top:16px'>" + nextBtn +
+      "<button class='act' id='shareBtn'>Copy result</button>" +
+      "<button class='act' id='dlBtn'>Save my drawing</button></div>";
+
+    var filled = Math.round(score/10), bar = "";
+    for (var i=0;i<10;i++) bar += i < filled ? "🟩" : "⬜";
+    var label = mode === "daily" ? todayStr() : "Unlimited";
+    var shareText = "Vexillio " + label + "\n" + bar + " " + score + "/100";
+
+    document.getElementById("shareBtn").addEventListener("click", function(e){
+      try { navigator.clipboard.writeText(shareText); msgEl.textContent = "Copied to clipboard!"; }
+      catch(err){ msgEl.textContent = "Couldn't copy. Try manually."; }
+      e.target.blur();
+    });
+    document.getElementById("dlBtn").addEventListener("click", function(){
+      var a = document.createElement("a");
+      a.href = drawn; a.download = "vexillio-drawing.png";
+      document.body.appendChild(a); a.click(); a.remove();
+    });
+    var nb = document.getElementById("nextBtn");
+    if (nb) nb.addEventListener("click", function(){ setMode("unlimited"); });
+  }
+
+  setMode("daily");
+})();
+</script>
+</body>
+</html>
